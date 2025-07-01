@@ -17,6 +17,10 @@ def get_model_list():
     return files
 
 
+stop_event = threading.Event()
+model_thread = None
+
+
 def run_model(model_name, conf, fps, show, save):
     print(
         f"[DEBUG] Avvio modello {model_name} con conf={conf}, fps={fps}, show={show}, save={save}"
@@ -31,22 +35,49 @@ def run_model(model_name, conf, fps, show, save):
     )
     delay = 1.0 / fps if fps > 0 else 0
     for r in results:
+        if stop_event.is_set():
+            print("[DEBUG] Stop richiesto, uscita dal loop di rilevamento.")
+            break
         print(f"[DEBUG] Frame processato, conf={conf}")
         if delay > 0:
             time.sleep(delay)
         if not show:
             break  # Se non mostro, esco dopo il primo frame
+    print("[DEBUG] Thread di rilevamento terminato.")
 
 
 def start_model():
+    global model_thread
+    stop_event.clear()
     model_name = model_var.get()
     conf = float(conf_var.get())
     fps = int(fps_var.get())
     show = show_var.get()
     save = save_var.get()
-    threading.Thread(
+    model_thread = threading.Thread(
         target=run_model, args=(model_name, conf, fps, show, save), daemon=True
-    ).start()
+    )
+    model_thread.start()
+
+
+def stop_model():
+    stop_event.set()
+    print("[DEBUG] Stop richiesto dall'utente.")
+    # Attendi che il thread termini (opzionale)
+    if model_thread and model_thread.is_alive():
+        model_thread.join(timeout=2)
+        print("[DEBUG] Thread fermato.")
+
+
+def reload_all():
+    stop_model()
+    # Ricarica lista modelli
+    new_list = get_model_list()
+    model_combo["values"] = new_list
+    if new_list:
+        model_var.set(new_list[0])
+    print("[DEBUG] Modelli ricaricati.")
+    # Qui si potrebbe anche riaprire la telecamera se necessario
 
 
 root = tk.Tk()
@@ -87,7 +118,13 @@ ttk.Checkbutton(mainframe, text="Save Results", variable=save_var).grid(
 )
 
 ttk.Button(mainframe, text="Start Model", command=start_model).grid(
-    row=5, column=0, columnspan=2, pady=10
+    row=5, column=0, pady=10, sticky=tk.W
+)
+ttk.Button(mainframe, text="Stop", command=stop_model).grid(
+    row=5, column=1, pady=10, sticky=tk.E
+)
+ttk.Button(mainframe, text="Reload", command=reload_all).grid(
+    row=5, column=2, pady=10, sticky=tk.E
 )
 
 # Debug area
